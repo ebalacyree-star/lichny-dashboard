@@ -1,3 +1,4 @@
+Исходный код для переноса
 <!doctype html>
 <html lang="ru">
 <head>
@@ -128,6 +129,10 @@ textarea.inp{min-height:110px;resize:vertical}
 .auth{padding-top:8vh}
 .auth h1{font-family:"Unbounded","Golos Text",sans-serif;font-weight:700;font-size:26px;margin:0 0 8px;letter-spacing:-.01em}
 .auth p{color:var(--muted);margin:0 0 12px}
+.steps{margin:0;padding:0 0 0 24px}
+.steps li{margin:0 0 12px;padding-left:4px}
+.steps li b{font-weight:700}
+.note{background:var(--card);border-radius:16px;padding:14px 16px;margin-top:12px;font-size:15px}
 @media (prefers-reduced-motion: reduce){.wave,.sheet{animation:none}.liquid,.toast{transition:none}}
 </style>
 </head>
@@ -174,7 +179,7 @@ let fit={connected:null,daily:[],workouts:[],error:''};
 const FITMSG={ok:'Браслет подключён, загружаю данные',denied:'Подключение браслета отменено',expired:'Ссылка устарела, попробуй подключить ещё раз',notlinked:'Этот аккаунт Google не привязан к Fitbit',norefresh:'Google не выдал постоянный доступ, попробуй ещё раз',error:'Не удалось подключить браслет'};
 const KINDS={RUNNING:'Бег',WALKING:'Ходьба',BIKING:'Велосипед',CYCLING:'Велосипед',SWIMMING:'Плавание',HIKING:'Поход',YOGA:'Йога',STRENGTH_TRAINING:'Силовая',WEIGHTLIFTING:'Силовая',WEIGHTS:'Силовая',HIIT:'Интервальная',ELLIPTICAL:'Эллипс',WORKOUT:'Тренировка',SPORT:'Спорт',OTHER:'Тренировка'};
 function kindName(k){k=String(k||'OTHER');if(KINDS[k])return KINDS[k];const t=k.toLowerCase().replace(/_/g,' ');return t.charAt(0).toUpperCase()+t.slice(1);}
-function hm(m){return Math.floor(m/60)+' ч '+(m%60)+' мин';}
+function hm(m){return Math.floor(m/60)+' ч '+(m%60)+' мин';}
 async function loadFit(){
   const from=iso(addDays(now(),-14));
   const [d,w]=await Promise.all([
@@ -198,14 +203,14 @@ async function syncFit(force){
 function wRow(w,withDate){
   const d=new Date(w.started_at);
   const when=withDate?dayMonth(d):d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-  return '<div class="row"><div class="main"><div class="t">'+esc(kindName(w.kind))+'</div><div class="s">'+when+(w.calories?', '+Number(w.calories).toLocaleString('ru-RU')+' ккал':'')+'</div></div><div class="amt">'+(w.minutes!=null?w.minutes+' мин':'')+'</div></div>';
+  return '<div class="row"><div class="main"><div class="t">'+esc(kindName(w.kind))+'</div><div class="s">'+when+(w.calories?', '+Number(w.calories).toLocaleString('ru-RU')+' ккал':'')+'</div></div><div class="amt">'+(w.minutes!=null?w.minutes+' мин':'')+'</div></div>';
 }
 function fitBlock(){
   let h='<h2>Браслет'+(fit.connected?'<button data-act="open-fit">За две недели</button>':'')+'</h2>';
   if(fit.connected===null)return h+'<div class="list"><div class="empty">Проверяю браслет…</div></div>';
   if(!fit.connected)return h+'<div class="list"><div class="empty">Подключи браслет Fitbit, и здесь появятся сон, шаги, калории и тренировки.'+(fit.error?' '+esc(fit.error)+'.':'')+'</div></div><button class="wide-btn" data-act="fit-connect">Подключить браслет</button>';
   const today=iso(now());const t=fit.daily.find(r=>r.day===today)||{};
-  h+='<div class="pair" style="margin-top:0"><div class="stat"><span>Шаги сегодня</span><b>'+(t.steps!=null?Number(t.steps).toLocaleString('ru-RU'):'нет данных')+'</b></div><div class="stat"><span>Сожжено за день</span><b>'+(t.calories!=null?Number(t.calories).toLocaleString('ru-RU')+' ккал':'нет данных')+'</b></div></div>';
+  h+='<div class="pair" style="margin-top:0"><div class="stat"><span>Шаги сегодня</span><b>'+(t.steps!=null?Number(t.steps).toLocaleString('ru-RU'):'нет данных')+'</b></div><div class="stat"><span>Сожжено за день</span><b>'+(t.calories!=null?Number(t.calories).toLocaleString('ru-RU')+' ккал':'нет данных')+'</b></div></div>';
   h+='<div class="sleepcard" style="margin-top:12px"><div class="head"><span>Сон этой ночью</span><b>'+(t.sleep_minutes?hm(t.sleep_minutes):'нет данных')+'</b></div></div>';
   const tw=fit.workouts.filter(w=>iso(new Date(w.started_at))===today);
   h+='<div class="list" style="margin-top:12px">'+(tw.length?tw.map(w=>wRow(w,false)).join(''):'<div class="empty">Сегодня тренировок нет.</div>')+'</div>';
@@ -346,8 +351,22 @@ function sheetHTML(){
   if(sheetMode==='date')return head('Назначить дату')+'<p class="hint" style="margin-top:0">'+esc(draft.text||'')+'</p><label class="f" for="dd">Когда</label><input class="inp" type="date" id="dd" value="'+iso(addDays(now(),1))+'">'+repeatSelect('dr','none')+'<button class="wide-btn" data-act="save-date">Перенести в задачи</button>';
   if(sheetMode==='duty')return head('Новая задача')+'<label class="f" for="dt">Что нужно сделать</label><input class="inp" type="text" id="dt" placeholder="Например: передать показания счётчиков"><label class="f" for="dd">Когда</label><input class="inp" type="date" id="dd" value="'+iso(addDays(now(),1))+'">'+repeatSelect('dr','month')+'<button class="wide-btn" data-act="save-duty">Добавить задачу</button>';
   if(sheetMode==='fit')return fitHistory();
+  if(sheetMode==='fit-help')return head('Как подключить браслет')
+    +'<ol class="steps">'
+    +'<li><b>Проверь вход в приложении браслета.</b> В приложении Fitbit или Google Health на телефоне ты должен входить кнопкой «Войти через Google». Если входишь по старой почте и паролю Fitbit, приложение само предложит перенести аккаунт на Google. Сначала сделай это.</li>'
+    +'<li><b>Отправь Егору почту этого аккаунта Google.</b> Он добавит её в список разрешённых. Пока почты нет в списке, Google не пустит дальше.</li>'
+    +'<li><b>Нажми «Подключить браслет»</b> внизу этого окна, когда Егор ответит, что добавил.</li>'
+    +'<li><b>Выбери аккаунт Google, к которому привязан браслет.</b> Если у тебя несколько аккаунтов, не перепутай.</li>'
+    +'<li><b>Не пугайся предупреждения.</b> Google напишет, что приложение не проверено. Для личного приложения это нормально. Открой дополнительные настройки на этом экране и перейди по ссылке, которая ведёт дальше.</li>'
+    +'<li><b>Разреши доступ.</b> Отметь все пункты в списке и нажми «Продолжить». Дашборд только читает данные, изменить в браслете он ничего не может.</li>'
+    +'<li><b>Подожди минуту.</b> Ты вернёшься в дашборд, и в блоке «Браслет» появятся шаги, калории, сон и тренировки.</li>'
+    +'</ol>'
+    +'<div class="note">Подходят браслеты Fitbit и часы Pixel. Раз в неделю Google может попросить подключить браслет заново, это ограничение тестового режима. Отключить браслет можно в настройках в любой момент.</div>'
+    +'<div class="note">Твои данные с браслета в дашборде видишь только ты, но хранятся они в базе Егора.</div>'
+    +(isAdmin?'<div class="note"><b>Тебе как владельцу.</b> Почту друга добавь в Google Cloud: проект fitbit-bot, раздел Audience, блок Test users, кнопка Add users. Открывай под тем аккаунтом Google, в котором создан проект.</div>':'')
+    +(fit.connected?'<button class="wide-btn ghost" data-act="fit-sync">Обновить данные браслета</button>':'<button class="wide-btn" data-act="fit-connect">Подключить браслет</button>');
   if(sheetMode==='feedback')return head('Чего не хватает?')+'<label class="f" for="fb">Что добавить или поправить</label><textarea class="inp" id="fb" placeholder="Например: хочу видеть расходы за прошлый месяц"></textarea><button class="wide-btn" data-act="save-feedback">Отправить предложение</button><h2>'+(isAdmin?'Все предложения':'Мои предложения')+'</h2><div class="list">'+(S.feedback.length?S.feedback.map(x=>'<div class="row"><div class="main"><div class="t">'+esc(x.text)+'</div><div class="s'+(x.done?' now':'')+'">'+(isAdmin&&x.author?esc(x.author)+', ':'')+dayMonth(parse(x.date))+', '+(x.done?'сделано':'в очереди')+'</div></div>'+(isAdmin?'<button class="chip-btn" data-act="fb-toggle" data-id="'+x.id+'">'+(x.done?'Вернуть':'Сделано')+'</button>':'')+'</div>').join(''):'<div class="empty">Пока предложений нет.</div>')+'</div>';
-  if(sheetMode==='settings')return head('Настройки')+'<p class="hint" style="margin-top:0">Ты вошёл как '+esc(user?user.email:'')+'</p><button class="wide-btn" data-act="open-feedback">Предложить доработку</button>'+(fit.connected?'<button class="wide-btn ghost" data-act="fit-sync">Обновить данные браслета</button><button class="wide-btn ghost" data-act="fit-disconnect">Отключить браслет</button>':'<button class="wide-btn ghost" data-act="fit-connect">Подключить браслет</button>')+'<button class="wide-btn ghost" data-act="sign-out">Выйти</button>';
+  if(sheetMode==='settings')return head('Настройки')+'<p class="hint" style="margin-top:0">Ты вошёл как '+esc(user?user.email:'')+'</p><button class="wide-btn" data-act="open-feedback">Предложить доработку</button>'+(fit.connected?'<button class="wide-btn ghost" data-act="fit-sync">Обновить данные браслета</button><button class="wide-btn ghost" data-act="fit-disconnect">Отключить браслет</button>':'<button class="wide-btn ghost" data-act="fit-connect">Подключить браслет</button>')+'<button class="wide-btn ghost" data-act="open-fit-help">Как подключить новый браслет</button><button class="wide-btn ghost" data-act="sign-out">Выйти</button>';
   return '';
 }
 function openSheet(mode,d){sheetMode=mode;draft=d||{};document.getElementById('sheet').innerHTML=sheetHTML();document.getElementById('shade').classList.add('open');const f=document.querySelector('#sheet textarea,#sheet input[type=text],#sheet input[type=number]');if(f)setTimeout(()=>f.focus(),60);}
@@ -368,6 +387,7 @@ const acts={
   'open-settings':()=>openSheet('settings'),
   'open-feedback':()=>openSheet('feedback'),
   'open-fit':()=>openSheet('fit'),
+  'open-fit-help':()=>openSheet('fit-help'),
   'retry-now':()=>{toast('Подключаюсь');retryAuth();},
   'fit-connect':async()=>{closeSheet();toast('Открываю Google. Выбери аккаунт, к которому привязан браслет');const r=await sb.functions.invoke('fitbit',{body:{action:'start'}});if(r.error||!r.data||!r.data.url){toast('Не удалось начать подключение браслета');return;}location.href=r.data.url;},
   'fit-sync':async()=>{closeSheet();toast('Обновляю данные браслета');await syncFit(true);},
@@ -432,3 +452,4 @@ render();
 </script>
 </body>
 </html>
+
