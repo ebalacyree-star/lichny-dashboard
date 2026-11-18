@@ -1,4 +1,3 @@
-Исходный код для переноса
 <!doctype html>
 <html lang="ru">
 <head>
@@ -179,9 +178,9 @@ let fit={connected:null,daily:[],workouts:[],error:''};
 const FITMSG={ok:'Браслет подключён, загружаю данные',denied:'Подключение браслета отменено',expired:'Ссылка устарела, попробуй подключить ещё раз',notlinked:'Этот аккаунт Google не привязан к Fitbit',norefresh:'Google не выдал постоянный доступ, попробуй ещё раз',error:'Не удалось подключить браслет'};
 const KINDS={RUNNING:'Бег',WALKING:'Ходьба',BIKING:'Велосипед',CYCLING:'Велосипед',SWIMMING:'Плавание',HIKING:'Поход',YOGA:'Йога',STRENGTH_TRAINING:'Силовая',WEIGHTLIFTING:'Силовая',WEIGHTS:'Силовая',HIIT:'Интервальная',ELLIPTICAL:'Эллипс',WORKOUT:'Тренировка',SPORT:'Спорт',OTHER:'Тренировка'};
 function kindName(k){k=String(k||'OTHER');if(KINDS[k])return KINDS[k];const t=k.toLowerCase().replace(/_/g,' ');return t.charAt(0).toUpperCase()+t.slice(1);}
-function hm(m){return Math.floor(m/60)+' ч '+(m%60)+' мин';}
+function hm(m){return Math.floor(m/60)+' ч '+(m%60)+' мин';}
 async function loadFit(){
-  const from=iso(addDays(now(),-14));
+  const from=iso(addDays(now(),-91));
   const [d,w]=await Promise.all([
     sb.from('fitbit_daily').select('day,steps,calories,sleep_minutes').gte('day',from).order('day'),
     sb.from('workouts').select('id,kind,started_at,minutes,calories').gte('started_at',from).order('started_at',{ascending:false})]);
@@ -203,34 +202,39 @@ async function syncFit(force){
 function wRow(w,withDate){
   const d=new Date(w.started_at);
   const when=withDate?dayMonth(d):d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-  return '<div class="row"><div class="main"><div class="t">'+esc(kindName(w.kind))+'</div><div class="s">'+when+(w.calories?', '+Number(w.calories).toLocaleString('ru-RU')+' ккал':'')+'</div></div><div class="amt">'+(w.minutes!=null?w.minutes+' мин':'')+'</div></div>';
+  return '<div class="row"><div class="main"><div class="t">'+esc(kindName(w.kind))+'</div><div class="s">'+when+(w.calories?', '+Number(w.calories).toLocaleString('ru-RU')+' ккал':'')+'</div></div><div class="amt">'+(w.minutes!=null?w.minutes+' мин':'')+'</div></div>';
 }
 function fitBlock(){
-  let h='<h2>Браслет'+(fit.connected?'<button data-act="open-fit">За две недели</button>':'')+'</h2>';
+  let h='<h2>Браслет'+(fit.connected?'<button data-act="open-fit">История</button>':'')+'</h2>';
   if(fit.connected===null)return h+'<div class="list"><div class="empty">Проверяю браслет…</div></div>';
   if(!fit.connected)return h+'<div class="list"><div class="empty">Подключи браслет Fitbit, и здесь появятся сон, шаги, калории и тренировки.'+(fit.error?' '+esc(fit.error)+'.':'')+'</div></div><button class="wide-btn" data-act="fit-connect">Подключить браслет</button>';
   const today=iso(now());const t=fit.daily.find(r=>r.day===today)||{};
-  h+='<div class="pair" style="margin-top:0"><div class="stat"><span>Шаги сегодня</span><b>'+(t.steps!=null?Number(t.steps).toLocaleString('ru-RU'):'нет данных')+'</b></div><div class="stat"><span>Сожжено за день</span><b>'+(t.calories!=null?Number(t.calories).toLocaleString('ru-RU')+' ккал':'нет данных')+'</b></div></div>';
+  h+='<div class="pair" style="margin-top:0"><div class="stat"><span>Шаги сегодня</span><b>'+(t.steps!=null?Number(t.steps).toLocaleString('ru-RU'):'нет данных')+'</b></div><div class="stat"><span>Сожжено за день</span><b>'+(t.calories!=null?Number(t.calories).toLocaleString('ru-RU')+' ккал':'нет данных')+'</b></div></div>';
   h+='<div class="sleepcard" style="margin-top:12px"><div class="head"><span>Сон этой ночью</span><b>'+(t.sleep_minutes?hm(t.sleep_minutes):'нет данных')+'</b></div></div>';
   const tw=fit.workouts.filter(w=>iso(new Date(w.started_at))===today);
   h+='<div class="list" style="margin-top:12px">'+(tw.length?tw.map(w=>wRow(w,false)).join(''):'<div class="empty">Сегодня тренировок нет.</div>')+'</div>';
   if(fit.error)h+='<p class="quiet">'+esc(fit.error)+'.</p>';
   return h;
 }
+let fitPeriod=7;
+function fitDeep(){try{return localStorage.getItem('fit-deep-'+(user?user.id:''))==='1';}catch(e){return false;}}
+function setFitDeep(){try{localStorage.setItem('fit-deep-'+(user?user.id:''),'1');}catch(e){}}
 function fitHistory(){
-  const days=[];for(let i=13;i>=0;i--)days.push(addDays(now(),-i));
-  const by={};fit.daily.forEach(r=>{by[r.day]=r;});
-  const rows=days.map(d=>by[iso(d)]||{});
-  const maxS=Math.max(1,...rows.map(r=>r.steps||0));
-  const bars=fn=>'<div class="bars" style="grid-template-columns:repeat(14,1fr);gap:4px;height:130px">'+days.map((d,i)=>'<div class="bar'+(i===13?' today':'')+'"><i style="height:'+fn(rows[i])+'%"></i><span>'+d.getDate()+'</span></div>').join('')+'</div>';
-  let top=null;days.forEach((d,i)=>{if(rows[i].steps&&(!top||rows[i].steps>top.v))top={v:rows[i].steps,d};});
-  const nights=rows.filter(r=>r.sleep_minutes).length;
-  return head('Браслет за две недели')
-    +'<h2 style="margin-top:8px">Шаги по дням</h2>'+bars(r=>Math.round((r.steps||0)/maxS*100))
-    +'<p class="hint">'+(top?'Больше всего: '+Number(top.v).toLocaleString('ru-RU')+' шагов, '+dayMonth(top.d)+'.':'Шагов за эти дни браслет не записал.')+'</p>'
-    +'<h2>Сон по ночам</h2>'+bars(r=>Math.min(100,Math.round((r.sleep_minutes||0)/540*100)))
-    +'<p class="hint">'+(nights?'Браслет записал сон за '+nights+' из 14 ночей.':'Сон за эти дни браслет не записал.')+'</p>'
-    +'<h2>Тренировки</h2><div class="list">'+(fit.workouts.length?fit.workouts.map(w=>wRow(w,true)).join(''):'<div class="empty">Тренировок с браслета пока нет.</div>')+'</div>';
+  const n=fitPeriod;const days=[];for(let i=n-1;i>=0;i--)days.push(addDays(now(),-i));
+  const by={};fit.daily.forEach(r=>{by[r.day]=r;});const rows=days.map(d=>by[iso(d)]||{});
+  const lab=(d,i)=>n===7?DOW[(d.getDay()+6)%7]:((n-1-i)%5===0?String(d.getDate()):'');
+  const bars=(key,cap)=>{const max=Math.max(1,cap||0,...rows.map(r=>r[key]||0));return '<div class="bars" style="grid-template-columns:repeat('+n+',1fr);gap:'+(n===7?8:n===30?3:1)+'px;height:120px">'+days.map((d,i)=>'<div class="bar'+(i===n-1?' today':'')+'"><i style="height:'+Math.round((rows[i][key]||0)/max*100)+'%;min-height:'+(rows[i][key]?4:1)+'px"></i>'+(n===90?'':'<span>'+(lab(d,i)||'&nbsp;')+'</span>')+'</div>').join('')+'</div>';};
+  const vals=k=>rows.map(r=>r[k]).filter(v=>v!=null&&v>0);
+  const sum=a=>a.reduce((x,y)=>x+y,0);const avg=a=>a.length?Math.round(sum(a)/a.length):0;const num=v=>Number(v).toLocaleString('ru-RU');
+  const st=vals('steps'),ca=vals('calories'),sl=vals('sleep_minutes');
+  const from=iso(days[0]);const ws=fit.workouts.filter(w=>iso(new Date(w.started_at))>=from);
+  return head('История браслета')
+    +'<div class="seg" style="grid-template-columns:repeat(3,1fr)">'+[7,30,90].map(p=>'<button data-act="fit-period" data-v="'+p+'" aria-pressed="'+(fitPeriod===p)+'">'+p+' дней</button>').join('')+'</div>'
+    +'<p class="hint" style="margin-top:0">С '+dayMonth(days[0])+' по '+dayMonth(days[n-1])+'.</p>'
+    +'<h2 style="margin-top:16px">Шаги</h2>'+bars('steps')+'<p class="hint">'+(st.length?'Всего '+num(sum(st))+', в среднем '+num(avg(st))+' в день.':'Нет данных за этот период.')+'</p>'
+    +'<h2>Калории</h2>'+bars('calories')+'<p class="hint">'+(ca.length?'В среднем '+num(avg(ca))+' ккал в день.':'Нет данных за этот период.')+'</p>'
+    +'<h2>Сон</h2>'+bars('sleep_minutes',540)+'<p class="hint">'+(sl.length?'Записано ночей: '+sl.length+', в среднем '+hm(avg(sl))+'.':'Сон за этот период браслет не записал.')+'</p>'
+    +'<h2>Тренировки</h2>'+(ws.length?'<p class="hint" style="margin-top:0">Всего '+ws.length+', суммарно '+hm(sum(ws.map(w=>w.minutes||0)))+'.</p>':'')+'<div class="list">'+(ws.length?ws.map(w=>wRow(w,true)).join(''):'<div class="empty">Тренировок за этот период нет.</div>')+'</div>';
 }
 let user=null,loading=true,authMsg='',authEmail='';
 async function loadAll(){
@@ -387,6 +391,16 @@ const acts={
   'open-settings':()=>openSheet('settings'),
   'open-feedback':()=>openSheet('feedback'),
   'open-fit':()=>openSheet('fit'),
+  'fit-period':async el=>{
+    fitPeriod=Number(el.dataset.v);refreshSheet();
+    if(fitPeriod>14&&!fitDeep()){
+      toast('Загружаю историю с браслета, это займёт до минуты');
+      const r=await sb.functions.invoke('fitbit',{body:{action:'sync',force:true,days:90}});
+      if(!r.error&&r.data&&r.data.connected&&!r.data.error&&r.data.days>=90){setFitDeep();await loadFit();if(sheetMode==='fit')refreshSheet();toast('История загружена');}
+      else if(!r.error&&r.data&&r.data.connected&&!r.data.error){await loadFit();if(sheetMode==='fit')refreshSheet();toast('Пока доступны только последние две недели');}
+      else toast('Не удалось загрузить историю, попробуй позже');
+    }
+  },
   'open-fit-help':()=>openSheet('fit-help'),
   'retry-now':()=>{toast('Подключаюсь');retryAuth();},
   'fit-connect':async()=>{closeSheet();toast('Открываю Google. Выбери аккаунт, к которому привязан браслет');const r=await sb.functions.invoke('fitbit',{body:{action:'start'}});if(r.error||!r.data||!r.data.url){toast('Не удалось начать подключение браслета');return;}location.href=r.data.url;},
@@ -452,4 +466,3 @@ render();
 </script>
 </body>
 </html>
-
