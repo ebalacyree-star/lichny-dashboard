@@ -169,7 +169,7 @@ const uid=()=>crypto.randomUUID();
 const plural=(n,a,b,c)=>{const m=n%100,k=n%10;return (m>10&&m<20)?c:k===1?a:(k>1&&k<5)?b:c;};
 const dayMonth=d=>d.toLocaleDateString('ru-RU',{day:'numeric',month:'long'});
 
-let S={expenses:[],inbox:[],shop:[],duties:[]};
+let S={expenses:[],inbox:[],shop:[],duties:[],feedback:[]};let isAdmin=false;
 let user=null,loading=true,authMsg='',authEmail='';
 async function loadAll(){
   const from=iso(addDays(now(),-62));
@@ -179,7 +179,8 @@ async function loadAll(){
     sb.from('shopping').select('id,text,done').order('created_at',{ascending:false}),
     sb.from('duties').select('id,title,due,repeat_rule')]);
   const err=e.error||i.error||s.error||d.error;if(err)throw err;
-  S={expenses:e.data.map(x=>({id:x.id,amount:Number(x.amount),cat:x.category,date:x.spent_on})),
+  const f=await sb.from('feedback').select('id,text,done,author,user_id,created_at').order('created_at',{ascending:false});const ad=await sb.rpc('is_admin');isAdmin=!ad.error&&ad.data===true;
+  S={feedback:f.error?[]:f.data.map(x=>({id:x.id,text:x.text,done:x.done,author:x.author||'',date:iso(new Date(x.created_at))})),expenses:e.data.map(x=>({id:x.id,amount:Number(x.amount),cat:x.category,date:x.spent_on})),
      inbox:i.data.map(x=>({id:x.id,text:x.text,created:iso(new Date(x.created_at))})),
      shop:s.data.map(x=>({id:x.id,text:x.text,done:x.done})),
      duties:d.data.map(x=>({id:x.id,title:x.title,due:x.due,repeat:x.repeat_rule}))};
@@ -227,7 +228,7 @@ function viewToday(){
   h+='<h2>Входящие<button data-tab="inbox">Разобрать</button></h2><div class="list">';
   h+=S.inbox.length?S.inbox.slice(0,2).map(x=>'<div class="row"><div class="main"><div class="t">'+esc(x.text)+'</div></div></div>').join('')+(S.inbox.length>2?'<div class="row"><div class="main"><div class="s">И ещё '+(S.inbox.length-2)+'</div></div></div>':''):'<div class="empty">Пусто. Нажми плюс и запиши мысль.</div>';
   const sl=[6.9,7.6,6.1,7.8,6.4,8.3,7.2];
-  h+='</div><h2>Браслет</h2><div class="sleepcard"><div class="head"><span>Сон этой ночью</span><b>7 ч 12 мин</b></div><div class="bars">'+sl.map((v,i)=>{const d=addDays(now(),i-6);return '<div class="bar'+(i===6?' today':'')+'"><i style="height:'+Math.round(v/9*100)+'%"></i><span>'+DOW[(d.getDay()+6)%7]+'</span></div>';}).join('')+'</div></div><div class="pair"><div class="stat"><span>Шаги сегодня</span><b>8 240</b></div><div class="stat"><span>Сожжено за день</span><b>2 340 ккал</b></div></div><p class="quiet">В блоке «Браслет» пока пример цифр: браслет ещё не подключён.</p>';
+  h+='</div><h2>Браслет</h2><div class="sleepcard"><div class="head"><span>Сон этой ночью</span><b>7 ч 12 мин</b></div><div class="bars">'+sl.map((v,i)=>{const d=addDays(now(),i-6);return '<div class="bar'+(i===6?' today':'')+'"><i style="height:'+Math.round(v/9*100)+'%"></i><span>'+DOW[(d.getDay()+6)%7]+'</span></div>';}).join('')+'</div></div><div class="pair"><div class="stat"><span>Шаги сегодня</span><b>8 240</b></div><div class="stat"><span>Сожжено за день</span><b>2 340 ккал</b></div></div><p class="quiet">В блоке «Браслет» пока пример цифр: браслет ещё не подключён.</p><button class="wide-btn ghost" data-act="open-feedback">Чего не хватает? Предложить доработку</button>';
   return h;
 }
 
@@ -287,7 +288,8 @@ function sheetHTML(){
   if(sheetMode==='thought')return head('Мысль')+'<label class="f" for="th">Что не хочется забыть</label><textarea class="inp" id="th" placeholder="Например: купить батарейки"></textarea><p class="hint">Начни со слова «купить», и запись уйдёт в список покупок.</p><button class="wide-btn" data-act="save-thought">Записать мысль</button>';
   if(sheetMode==='date')return head('Назначить дату')+'<p class="hint" style="margin-top:0">'+esc(draft.text||'')+'</p><label class="f" for="dd">Когда</label><input class="inp" type="date" id="dd" value="'+iso(addDays(now(),1))+'">'+repeatSelect('dr','none')+'<button class="wide-btn" data-act="save-date">Перенести в дела</button>';
   if(sheetMode==='duty')return head('Новое дело')+'<label class="f" for="dt">Что нужно сделать</label><input class="inp" type="text" id="dt" placeholder="Например: передать показания счётчиков"><label class="f" for="dd">Когда</label><input class="inp" type="date" id="dd" value="'+iso(addDays(now(),1))+'">'+repeatSelect('dr','month')+'<button class="wide-btn" data-act="save-duty">Добавить дело</button>';
-  if(sheetMode==='settings')return head('Настройки')+'<p class="hint" style="margin-top:0">Ты вошёл как '+esc(user?user.email:'')+'</p><button class="wide-btn ghost" data-act="sign-out">Выйти</button>';
+  if(sheetMode==='feedback')return head('Чего не хватает?')+'<label class="f" for="fb">Что добавить или поправить</label><textarea class="inp" id="fb" placeholder="Например: хочу видеть расходы за прошлый месяц"></textarea><button class="wide-btn" data-act="save-feedback">Отправить предложение</button><h2>'+(isAdmin?'Все предложения':'Мои предложения')+'</h2><div class="list">'+(S.feedback.length?S.feedback.map(x=>'<div class="row"><div class="main"><div class="t">'+esc(x.text)+'</div><div class="s'+(x.done?' now':'')+'">'+(isAdmin&&x.author?esc(x.author)+', ':'')+dayMonth(parse(x.date))+', '+(x.done?'сделано':'в очереди')+'</div></div>'+(isAdmin?'<button class="chip-btn" data-act="fb-toggle" data-id="'+x.id+'">'+(x.done?'Вернуть':'Сделано')+'</button>':'')+'</div>').join(''):'<div class="empty">Пока предложений нет.</div>')+'</div>';
+  if(sheetMode==='settings')return head('Настройки')+'<p class="hint" style="margin-top:0">Ты вошёл как '+esc(user?user.email:'')+'</p><button class="wide-btn" data-act="open-feedback">Предложить доработку</button><button class="wide-btn ghost" data-act="sign-out">Выйти</button>';
   return '';
 }
 function openSheet(mode,d){sheetMode=mode;draft=d||{};document.getElementById('sheet').innerHTML=sheetHTML();document.getElementById('shade').classList.add('open');const f=document.querySelector('#sheet textarea,#sheet input[type=text],#sheet input[type=number]');if(f)setTimeout(()=>f.focus(),60);}
@@ -306,6 +308,9 @@ const acts={
   'open-thought':()=>openSheet('thought'),
   'open-duty':()=>openSheet('duty'),
   'open-settings':()=>openSheet('settings'),
+  'open-feedback':()=>openSheet('feedback'),
+  'save-feedback':()=>{const t=document.getElementById('fb').value.trim();if(!t){toast('Напиши хотя бы пару слов');return;}const r={id:uid(),text:t.slice(0,2000),done:false,author:user?user.email:'',date:iso(now())};S.feedback.unshift(r);refreshSheet();toast('Спасибо, предложение записано');run(sb.from('feedback').insert({id:r.id,text:r.text}));},
+  'fb-toggle':el=>{const x=S.feedback.find(i=>i.id===el.dataset.id);if(x){x.done=!x.done;refreshSheet();run(sb.from('feedback').update({done:x.done}).eq('id',x.id));}},
   'close':closeSheet,
   'key':el=>key(el.dataset.v),
   'cat':el=>{draft.cat=el.dataset.v;refreshSheet();},
