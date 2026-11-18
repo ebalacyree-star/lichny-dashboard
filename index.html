@@ -264,7 +264,7 @@ function viewToday(){
   h+='<h2>Ближайшие дела<button data-tab="duties">Все дела</button></h2><div class="list">'+(duties.length?duties.map(dutyRow).join(''):'<div class="empty">Дел нет. Добавь первое в разделе «Дела».</div>')+'</div>';
   h+='<h2>Входящие<button data-tab="inbox">Разобрать</button></h2><div class="list">';
   h+=S.inbox.length?S.inbox.slice(0,2).map(x=>'<div class="row"><div class="main"><div class="t">'+esc(x.text)+'</div></div></div>').join('')+(S.inbox.length>2?'<div class="row"><div class="main"><div class="s">И ещё '+(S.inbox.length-2)+'</div></div></div>':''):'<div class="empty">Пусто. Нажми плюс и запиши мысль.</div>';
-  h+='</div>'+fitBlock()+'<button class="wide-btn ghost" data-act="open-feedback">Чего не хватает? Предложить доработку</button>';
+  h+='</div>'+fitBlock();
   return h;
 }
 
