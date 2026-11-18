@@ -170,6 +170,43 @@ const plural=(n,a,b,c)=>{const m=n%100,k=n%10;return (m>10&&m<20)?c:k===1?a:(k>1
 const dayMonth=d=>d.toLocaleDateString('ru-RU',{day:'numeric',month:'long'});
 
 let S={expenses:[],inbox:[],shop:[],duties:[],feedback:[]};let isAdmin=false;
+let fit={connected:null,daily:[],workouts:[],error:''};
+const FITMSG={ok:'Браслет подключён, загружаю данные',denied:'Подключение браслета отменено',expired:'Ссылка устарела, попробуй подключить ещё раз',notlinked:'Этот аккаунт Google не привязан к Fitbit',norefresh:'Google не выдал постоянный доступ, попробуй ещё раз',error:'Не удалось подключить браслет'};
+const KINDS={RUNNING:'Бег',WALKING:'Ходьба',BIKING:'Велосипед',CYCLING:'Велосипед',SWIMMING:'Плавание',HIKING:'Поход',YOGA:'Йога',STRENGTH_TRAINING:'Силовая',WEIGHTLIFTING:'Силовая',WEIGHTS:'Силовая',HIIT:'Интервальная',ELLIPTICAL:'Эллипс',WORKOUT:'Тренировка',SPORT:'Спорт',OTHER:'Тренировка'};
+function kindName(k){k=String(k||'OTHER');if(KINDS[k])return KINDS[k];const t=k.toLowerCase().replace(/_/g,' ');return t.charAt(0).toUpperCase()+t.slice(1);}
+function hm(m){return Math.floor(m/60)+' ч '+(m%60)+' мин';}
+async function loadFit(){
+  const from=iso(addDays(now(),-14));
+  const [d,w]=await Promise.all([
+    sb.from('fitbit_daily').select('day,steps,calories,sleep_minutes').gte('day',from).order('day'),
+    sb.from('workouts').select('id,kind,started_at,minutes,calories').gte('started_at',from).order('started_at',{ascending:false})]);
+  if(!d.error)fit.daily=d.data;if(!w.error)fit.workouts=w.data;
+}
+async function syncFit(force){
+  try{
+    const r=await sb.functions.invoke('fitbit',{body:{action:'sync',force:!!force}});
+    if(r.error||!r.data){fit.error='Не удалось связаться с сервером браслета';if(fit.connected===null)fit.connected=false;}
+    else{
+      fit.connected=!!r.data.connected;
+      fit.error=r.data.error?(r.data.reconnect?'Доступ к браслету истёк, подключи его заново':'Браслет не отдал данные, попробуй позже'):'';
+      if(r.data.connected&&!r.data.skipped)await loadFit();
+      if(r.data.debug||r.data.errors)console.log('fitbit sync',JSON.stringify(r.data));
+    }
+  }catch(e){if(fit.connected===null)fit.connected=false;}
+  if(tab==='today'&&!sheetMode&&user)render();
+}
+function fitBlock(){
+  let h='<h2>Браслет</h2>';
+  if(fit.connected===null)return h+'<div class="list"><div class="empty">Проверяю браслет…</div></div>';
+  if(!fit.connected)return h+'<div class="list"><div class="empty">Подключи браслет Fitbit, и здесь появятся сон, шаги, калории и тренировки.'+(fit.error?' '+esc(fit.error)+'.':'')+'</div></div><button class="wide-btn" data-act="fit-connect">Подключить браслет</button>';
+  const by={};fit.daily.forEach(r=>{by[r.day]=r;});const today=iso(now());const t=by[today]||{};
+  const ws=fit.daily.filter(r=>r.sleep_minutes).slice(-1)[0];
+  h+='<div class="sleepcard"><div class="head"><span>'+(ws?(ws.day===today?'Сон этой ночью':'Сон, '+dayMonth(parse(ws.day))):'Сон')+'</span><b>'+(ws?hm(ws.sleep_minutes):'нет данных')+'</b></div><div class="bars">'+[0,1,2,3,4,5,6].map(i=>{const d=addDays(now(),i-6);const r=by[iso(d)];const v=r&&r.sleep_minutes?r.sleep_minutes/60:0;return '<div class="bar'+(i===6?' today':'')+'"><i style="height:'+Math.min(100,Math.round(v/9*100))+'%"></i><span>'+DOW[(d.getDay()+6)%7]+'</span></div>';}).join('')+'</div></div>';
+  h+='<div class="pair"><div class="stat"><span>Шаги сегодня</span><b>'+(t.steps!=null?Number(t.steps).toLocaleString('ru-RU'):'нет данных')+'</b></div><div class="stat"><span>Сожжено за день</span><b>'+(t.calories!=null?Number(t.calories).toLocaleString('ru-RU')+' ккал':'нет данных')+'</b></div></div>';
+  h+='<h2>Тренировки за две недели</h2><div class="list">'+(fit.workouts.length?fit.workouts.map(w=>{const d=new Date(w.started_at);return '<div class="row"><div class="main"><div class="t">'+esc(kindName(w.kind))+'</div><div class="s">'+dayMonth(d)+(w.calories?', '+Number(w.calories).toLocaleString('ru-RU')+' ккал':'')+'</div></div><div class="amt">'+(w.minutes!=null?w.minutes+' мин':'')+'</div></div>';}).join(''):'<div class="empty">Тренировок с браслета пока нет.</div>')+'</div>';
+  if(fit.error)h+='<p class="quiet">'+esc(fit.error)+'.</p>';
+  return h;
+}
 let user=null,loading=true,authMsg='',authEmail='';
 async function loadAll(){
   const from=iso(addDays(now(),-62));
@@ -227,8 +264,7 @@ function viewToday(){
   h+='<h2>Ближайшие дела<button data-tab="duties">Все дела</button></h2><div class="list">'+(duties.length?duties.map(dutyRow).join(''):'<div class="empty">Дел нет. Добавь первое в разделе «Дела».</div>')+'</div>';
   h+='<h2>Входящие<button data-tab="inbox">Разобрать</button></h2><div class="list">';
   h+=S.inbox.length?S.inbox.slice(0,2).map(x=>'<div class="row"><div class="main"><div class="t">'+esc(x.text)+'</div></div></div>').join('')+(S.inbox.length>2?'<div class="row"><div class="main"><div class="s">И ещё '+(S.inbox.length-2)+'</div></div></div>':''):'<div class="empty">Пусто. Нажми плюс и запиши мысль.</div>';
-  const sl=[6.9,7.6,6.1,7.8,6.4,8.3,7.2];
-  h+='</div><h2>Браслет</h2><div class="sleepcard"><div class="head"><span>Сон этой ночью</span><b>7 ч 12 мин</b></div><div class="bars">'+sl.map((v,i)=>{const d=addDays(now(),i-6);return '<div class="bar'+(i===6?' today':'')+'"><i style="height:'+Math.round(v/9*100)+'%"></i><span>'+DOW[(d.getDay()+6)%7]+'</span></div>';}).join('')+'</div></div><div class="pair"><div class="stat"><span>Шаги сегодня</span><b>8 240</b></div><div class="stat"><span>Сожжено за день</span><b>2 340 ккал</b></div></div><p class="quiet">В блоке «Браслет» пока пример цифр: браслет ещё не подключён.</p><button class="wide-btn ghost" data-act="open-feedback">Чего не хватает? Предложить доработку</button>';
+  h+='</div>'+fitBlock()+'<button class="wide-btn ghost" data-act="open-feedback">Чего не хватает? Предложить доработку</button>';
   return h;
 }
 
@@ -289,7 +325,7 @@ function sheetHTML(){
   if(sheetMode==='date')return head('Назначить дату')+'<p class="hint" style="margin-top:0">'+esc(draft.text||'')+'</p><label class="f" for="dd">Когда</label><input class="inp" type="date" id="dd" value="'+iso(addDays(now(),1))+'">'+repeatSelect('dr','none')+'<button class="wide-btn" data-act="save-date">Перенести в дела</button>';
   if(sheetMode==='duty')return head('Новое дело')+'<label class="f" for="dt">Что нужно сделать</label><input class="inp" type="text" id="dt" placeholder="Например: передать показания счётчиков"><label class="f" for="dd">Когда</label><input class="inp" type="date" id="dd" value="'+iso(addDays(now(),1))+'">'+repeatSelect('dr','month')+'<button class="wide-btn" data-act="save-duty">Добавить дело</button>';
   if(sheetMode==='feedback')return head('Чего не хватает?')+'<label class="f" for="fb">Что добавить или поправить</label><textarea class="inp" id="fb" placeholder="Например: хочу видеть расходы за прошлый месяц"></textarea><button class="wide-btn" data-act="save-feedback">Отправить предложение</button><h2>'+(isAdmin?'Все предложения':'Мои предложения')+'</h2><div class="list">'+(S.feedback.length?S.feedback.map(x=>'<div class="row"><div class="main"><div class="t">'+esc(x.text)+'</div><div class="s'+(x.done?' now':'')+'">'+(isAdmin&&x.author?esc(x.author)+', ':'')+dayMonth(parse(x.date))+', '+(x.done?'сделано':'в очереди')+'</div></div>'+(isAdmin?'<button class="chip-btn" data-act="fb-toggle" data-id="'+x.id+'">'+(x.done?'Вернуть':'Сделано')+'</button>':'')+'</div>').join(''):'<div class="empty">Пока предложений нет.</div>')+'</div>';
-  if(sheetMode==='settings')return head('Настройки')+'<p class="hint" style="margin-top:0">Ты вошёл как '+esc(user?user.email:'')+'</p><button class="wide-btn" data-act="open-feedback">Предложить доработку</button><button class="wide-btn ghost" data-act="sign-out">Выйти</button>';
+  if(sheetMode==='settings')return head('Настройки')+'<p class="hint" style="margin-top:0">Ты вошёл как '+esc(user?user.email:'')+'</p><button class="wide-btn" data-act="open-feedback">Предложить доработку</button>'+(fit.connected?'<button class="wide-btn ghost" data-act="fit-sync">Обновить данные браслета</button><button class="wide-btn ghost" data-act="fit-disconnect">Отключить браслет</button>':'<button class="wide-btn ghost" data-act="fit-connect">Подключить браслет</button>')+'<button class="wide-btn ghost" data-act="sign-out">Выйти</button>';
   return '';
 }
 function openSheet(mode,d){sheetMode=mode;draft=d||{};document.getElementById('sheet').innerHTML=sheetHTML();document.getElementById('shade').classList.add('open');const f=document.querySelector('#sheet textarea,#sheet input[type=text],#sheet input[type=number]');if(f)setTimeout(()=>f.focus(),60);}
@@ -309,6 +345,9 @@ const acts={
   'open-duty':()=>openSheet('duty'),
   'open-settings':()=>openSheet('settings'),
   'open-feedback':()=>openSheet('feedback'),
+  'fit-connect':async()=>{closeSheet();toast('Открываю Google. Выбери аккаунт, к которому привязан браслет');const r=await sb.functions.invoke('fitbit',{body:{action:'start'}});if(r.error||!r.data||!r.data.url){toast('Не удалось начать подключение браслета');return;}location.href=r.data.url;},
+  'fit-sync':async()=>{closeSheet();toast('Обновляю данные браслета');await syncFit(true);},
+  'fit-disconnect':async()=>{closeSheet();await sb.functions.invoke('fitbit',{body:{action:'disconnect'}});fit={connected:false,daily:[],workouts:[],error:''};render();toast('Браслет отключён');},
   'save-feedback':()=>{const t=document.getElementById('fb').value.trim();if(!t){toast('Напиши хотя бы пару слов');return;}const r={id:uid(),text:t.slice(0,2000),done:false,author:user?user.email:'',date:iso(now())};S.feedback.unshift(r);refreshSheet();toast('Спасибо, предложение записано');run(sb.from('feedback').insert({id:r.id,text:r.text}));},
   'fb-toggle':el=>{const x=S.feedback.find(i=>i.id===el.dataset.id);if(x){x.done=!x.done;refreshSheet();run(sb.from('feedback').update({done:x.done}).eq('id',x.id));}},
   'close':closeSheet,
@@ -344,8 +383,11 @@ document.addEventListener('keydown',e=>{
 async function boot(){
   if(!user){loading=false;render();return;}
   loading=true;render();
-  try{await loadAll();}catch(e){toast('Не удалось загрузить данные. Проверь связь');}
+  try{await loadAll();await loadFit();}catch(e){toast('Не удалось загрузить данные. Проверь связь');}
   loading=false;render();
+  const fp=new URLSearchParams(location.search).get('fitbit');
+  if(fp){history.replaceState(null,'',location.pathname);toast(FITMSG[fp]||FITMSG.error);}
+  syncFit(fp==='ok');
 }
 sb.auth.onAuthStateChange((ev,session)=>{const u=session?session.user:null;if(u&&user&&u.id===user.id)return;user=u;setTimeout(boot,0);});
 render();
