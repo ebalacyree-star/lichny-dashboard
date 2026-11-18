@@ -303,6 +303,7 @@ function viewDuties(){
 function render(){
   const v=document.getElementById('view');
   document.body.classList.toggle('out',!user);
+  if(offline&&!user){v.innerHTML='<div class="auth"><h1>Нет связи с сервером</h1><p>Ты не вышел из аккаунта, вход сохранён. Пробую подключиться снова.</p><button class="wide-btn" data-act="retry-now">Попробовать сейчас</button></div>';return;}
   if(loading){v.innerHTML='<div class="empty">Загружаю…</div>';return;}
   if(!user){v.innerHTML=viewAuth();return;}
   v.innerHTML=tab==='today'?viewToday():tab==='spend'?viewSpend():tab==='inbox'?viewInbox():viewDuties();
@@ -345,6 +346,7 @@ const acts={
   'open-duty':()=>openSheet('duty'),
   'open-settings':()=>openSheet('settings'),
   'open-feedback':()=>openSheet('feedback'),
+  'retry-now':()=>{toast('Подключаюсь');retryAuth();},
   'fit-connect':async()=>{closeSheet();toast('Открываю Google. Выбери аккаунт, к которому привязан браслет');const r=await sb.functions.invoke('fitbit',{body:{action:'start'}});if(r.error||!r.data||!r.data.url){toast('Не удалось начать подключение браслета');return;}location.href=r.data.url;},
   'fit-sync':async()=>{closeSheet();toast('Обновляю данные браслета');await syncFit(true);},
   'fit-disconnect':async()=>{closeSheet();await sb.functions.invoke('fitbit',{body:{action:'disconnect'}});fit={connected:false,daily:[],workouts:[],error:''};render();toast('Браслет отключён');},
@@ -389,7 +391,20 @@ async function boot(){
   if(fp){history.replaceState(null,'',location.pathname);toast(FITMSG[fp]||FITMSG.error);}
   syncFit(fp==='ok');
 }
-sb.auth.onAuthStateChange((ev,session)=>{const u=session?session.user:null;if(u&&user&&u.id===user.id)return;user=u;setTimeout(boot,0);});
+function hasStored(){try{return !!localStorage.getItem('sb-yywkgdkptiqczwawdtlh-auth-token');}catch(e){return false;}}
+let offline=false,retryTimer=null;
+async function retryAuth(){
+  clearTimeout(retryTimer);let s=null;
+  try{s=(await sb.auth.getSession()).data.session;}catch(e){}
+  if(s){offline=false;user=s.user;boot();}
+  else if(hasStored()){offline=true;loading=false;render();retryTimer=setTimeout(retryAuth,5000);}
+  else{offline=false;user=null;loading=false;render();}
+}
+sb.auth.onAuthStateChange((ev,session)=>{
+  const u=session?session.user:null;if(u&&user&&u.id===user.id)return;
+  if(!u&&ev!=='SIGNED_OUT'&&hasStored()){offline=true;loading=false;render();clearTimeout(retryTimer);retryTimer=setTimeout(retryAuth,3000);return;}
+  clearTimeout(retryTimer);offline=false;user=u;setTimeout(boot,0);
+});
 render();
 })();
 </script>
